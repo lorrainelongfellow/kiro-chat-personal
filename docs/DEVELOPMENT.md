@@ -8,7 +8,7 @@
 
 ## 命令
 
-`npm run check` 检查 TypeScript 类型和 JavaScript 语法。`npm test` 在临时 Git 工作区验证超过 200 个候选文件、真实变化列表截断、文本预算和二进制预算的计数行为，不调用模型。`npm run build` 通过 webpack 生成扩展主程序，复制兼容模块和 Webview 静态文件。`npm run package` 会先构建再生成 VSIX，安装包不包含开发源码和依赖目录。
+`npm run check` 检查 TypeScript 类型和 JavaScript 语法。`npm test` 在临时 Git 工作区验证改动计数，并校验图片输入、能力检查、ACP 内容传输与失败重试，不调用模型。`npm run build` 通过 webpack 生成扩展主程序，复制兼容模块和 Webview 静态文件。`npm run package` 会先构建再生成 VSIX，安装包不包含开发源码和依赖目录。
 
 ## 目录
 

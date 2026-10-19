@@ -161,6 +161,7 @@ exports.install = function install({ CliProcess, CliManager, ChatPanelProvider, 
     };
     require('./kiro-chat-history.js').install({ CliProcess, CliManager, ChatPanelProvider, vscode });
     require('./kiro-chat-ui.js').install({ CliProcess, ChatPanelProvider, vscode });
+    require('./kiro-chat-images.js').install({ CliProcess, ChatPanelProvider });
     require('./kiro-chat-usage.js').install({ CliProcess, ChatPanelProvider });
     require('./kiro-chat-models.js').install({ CliProcess, ChatPanelProvider });
     require('./kiro-chat-management.js').install({ CliManager, ChatPanelProvider, vscode });

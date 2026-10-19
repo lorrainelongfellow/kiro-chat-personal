@@ -2,7 +2,7 @@
   "name": "kiro-chat-personal",
   "displayName": "Kiro Chat Personal",
   "description": "Unofficial Kiro CLI chat sidebar with native models, history and account credit usage. Requires Kiro CLI separately.",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "publisher": "local-kiro-tools",
   "license": "MIT",
   "icon": "resources/kiro-icon.png",
@@ -96,7 +96,7 @@
     "check:types": "tsc --noEmit",
     "check:syntax": "node scripts/check-syntax.cjs",
     "package": "vsce package --no-dependencies",
-    "test": "node --test test/changes.test.cjs"
+    "test": "node --test test/changes.test.cjs test/images.test.cjs"
   },
   "dependencies": {
     "ignore": "7.0.5"

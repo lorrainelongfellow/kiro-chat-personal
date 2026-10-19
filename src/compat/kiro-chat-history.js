@@ -35,8 +35,23 @@ function remember(manager, cli) {
     });
 }
 
+const transcriptImageBytes = new WeakMap();
 function appendUpdate(transcript, update) {
     const type = update.sessionUpdate;
+    if (type === 'user_message_chunk' && update.content?.type === 'image') {
+        const { mimeType, data } = update.content;
+        const used = transcriptImageBytes.get(transcript) || 0;
+        const last = transcript.at(-1);
+        const messageId = update._meta?.kiro?.messageId || update._meta?.messageId;
+        const entry = last?.role === 'user' && (!messageId || last.messageId === messageId) ? last : { role: 'user', text: '', messageId };
+        if (entry !== last) transcript.push(entry);
+        if (['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) && typeof data === 'string' && data.length > 0 &&
+            data.length <= Math.ceil(5 * 1024 * 1024 / 3) * 4 && used + data.length <= 28 * 1024 * 1024) {
+            transcriptImageBytes.set(transcript, used + data.length);
+            (entry.images ||= []).push({ name: '历史图片', url: 'data:' + mimeType + ';base64,' + data });
+        } else entry.text += '\n[图片附件：预览未恢复]';
+        return;
+    }
     if (type === 'user_message_chunk' || type === 'agent_message_chunk') {
         const role = type === 'user_message_chunk' ? 'user' : 'assistant';
         const text = update.content?.type === 'text' ? update.content.text : '';

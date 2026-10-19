@@ -4,7 +4,7 @@
     const $ = id => document.getElementById(id);
     const state = { options: [], busy: true, turning: false, cancelled: false, sessionId: '', history: [],
         historySelecting: false, historySelected: new Set(), historyResult: '',
-        attachments: [], context: {}, tools: new Map(), permissions: new Map(), nativeTools: false, hasMessages: false,
+        attachments: [], images: [], imageReading: 0, imageSupported: false, imageDraft: '', context: {}, tools: new Map(), permissions: new Map(), nativeTools: false, hasMessages: false,
         credits: null, creditsLoading: false, creditsError: '', catalogNotificationAt: null };
     const effortNames = { low: '低', medium: '中', high: '高', xhigh: '极高', max: '最高' };
     const modeNames = { vibe: 'Default', kiro_default: 'Default', kiro_planner: 'Plan', kiro_guide: 'Guide' };
@@ -79,7 +79,7 @@
         $('attach-btn').disabled = state.busy;
         $('context-btn').disabled = state.busy || !state.context.available;
         $('see-all-modes').disabled = state.busy || !mode?.options.length;
-        $('send-btn').disabled = !state.turning && (state.busy || !model?.options.length);
+        $('send-btn').disabled = !state.turning && (state.busy || !model?.options.length || !!state.imageReading || (state.images.length > 0 && !state.imageSupported));
         $('send-btn').classList.toggle('stop', state.turning);
         $('send-btn').innerHTML = state.turning ? stopIcon : sendIcon;
         $('send-btn').title = state.turning ? '停止生成' : '发送消息';
@@ -261,7 +261,7 @@
             }); pre.append(copy);
         }
     }
-    function message(role, text) {
+    function message(role, text, images = []) {
         showEmpty(false);
         const bubble = node('article', 'message ' + role);
         if (role === 'assistant') {
@@ -271,6 +271,11 @@
             bubble.append(node('div', '', text.slice(0, 280) + '…'));
             const details = node('details', 'long-prompt'); details.append(node('summary', '', '展开完整提问与上下文'), node('pre', '', text)); bubble.append(details);
         } else bubble.textContent = text;
+        if (images.length) {
+            const previews = node('div', 'message-images');
+            for (const image of images) { const preview = node('img'); preview.src = image.url; preview.alt = image.name; previews.append(preview); }
+            bubble.append(previews);
+        }
         $('messages').append(bubble); return bubble;
     }
     function finishAssistant() {
@@ -315,9 +320,37 @@
             const remove = node('button', '', '×'); remove.title = '移除'; remove.addEventListener('click', entry.remove);
             chip.append(node('span', '', entry.name), remove); $('attachment-list').append(chip);
         }
-        $('attachment-list').classList.toggle('hidden', !entries.length);
+        for (const image of state.images) {
+            const chip = node('span', 'attachment-chip image-chip'), preview = node('img'); preview.src = image.url; preview.alt = image.name;
+            const remove = node('button', '', '×'); remove.title = '移除图片'; remove.setAttribute('aria-label', '移除图片：' + image.name);
+            remove.addEventListener('click', () => { state.images = state.images.filter(item => item.id !== image.id); renderAttachments(); renderControls(); });
+            chip.append(preview, node('span', '', image.name), remove); $('attachment-list').append(chip);
+        }
+        $('attachment-list').classList.toggle('hidden', !entries.length && !state.images.length);
         $('context-btn').setAttribute('aria-pressed', String(!!state.context.included));
         $('context-label').textContent = state.context.available && state.context.included ? state.context.name : '';
+    }
+    async function pasteImages(event) {
+        const files = [...event.clipboardData?.items || []].filter(item => item.kind === 'file' && item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+        if (!files.length) return;
+        event.preventDefault();
+        if (!state.imageSupported) { status('当前会话尚未提供图片输入能力，请先连接支持图片的 CLI'); return; }
+        if (state.images.length + files.length > 5) { status('最多附加 5 张图片'); return; }
+        state.imageReading++; renderControls();
+        const sessionId = state.sessionId;
+        try {
+            const added = [];
+            for (const file of files) {
+                if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('只支持 PNG、JPEG、WebP 图片');
+                if (file.size > 5 * 1024 * 1024) throw new Error('单张图片不能超过 5 MiB');
+                const url = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('无法读取剪贴板图片')); reader.readAsDataURL(file); });
+                added.push({ id: crypto.randomUUID(), name: file.name || '粘贴的图片.png', mimeType: file.type, data: url.slice(url.indexOf(',') + 1), url, size: file.size });
+            }
+            if (state.images.length + added.length > 5 || [...state.images, ...added].reduce((sum, image) => sum + image.size, 0) > 20 * 1024 * 1024) throw new Error('最多 5 张图片，合计不能超过 20 MiB');
+            if (state.sessionId !== sessionId) return;
+            state.images.push(...added); status('已粘贴 ' + added.length + ' 张图片，发送后由当前模型处理'); renderAttachments();
+        } catch (error) { status(error.message); }
+        finally { state.imageReading--; renderControls(); }
     }
     function renderPermissions() {
         $('permission-panel').replaceChildren(); const request = state.permissions.values().next().value;
@@ -342,9 +375,11 @@
     function submit() {
         if (state.turning) { if (!state.cancelled) { state.cancelled = true; api.postMessage({ type: 'cancelPrompt' }); status('正在停止生成…'); } return; }
         if (state.busy || !config('model')?.options.length) return;
-        const text = $('message-input').value.trim(); if (!text && !state.attachments.length) return;
-        closePopups(); finishAssistant(); message('user', text || '请查看附加的文件'); scrollEnd(true);
-        api.postMessage({ type: 'sendMessage', text, attachments: state.attachments.map(file => file.path) });
+        if (state.imageReading || (state.images.length && !state.imageSupported)) return;
+        const text = $('message-input').value.trim(); if (!text && !state.attachments.length && !state.images.length) return;
+        closePopups(); finishAssistant(); message('user', text || (state.images.length ? '请查看附加图片' : '请查看附加的文件'), state.images); scrollEnd(true);
+        state.imageDraft = state.images.length ? text : '';
+        api.postMessage({ type: 'sendMessage', text, attachments: state.attachments.map(file => file.path), images: state.images.map(({ id, mimeType, data }) => ({ id, mimeType, data })) });
         $('message-input').value = ''; $('message-input').style.height = '';
         state.attachments = []; state.tools.clear(); state.nativeTools = false; renderAttachments(); setBusy(true);
     }
@@ -389,6 +424,7 @@
     $('permission-policy-revoke').addEventListener('click', () => api.postMessage({ type: 'revokeConversationPermission', sessionId: state.permissionSessionId }));
     $('message-input').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); } });
     $('message-input').addEventListener('input', () => { $('message-input').style.height = 'auto'; $('message-input').style.height = Math.min($('message-input').scrollHeight, 190) + 'px'; });
+    $('message-input').addEventListener('paste', pasteImages);
     window.addEventListener('message', event => {
         const messageData = event.data;
         switch (messageData.type) {
@@ -437,12 +473,14 @@
                 finishAssistant(); $('messages').replaceChildren(); state.tools.clear(); state.permissions.clear(); state.nativeTools = false; renderPermissions();
                 if (messageData.account) $('account-label').textContent = messageData.account.replace(/^当前账户：/, '');
                 for (const entry of messageData.entries) {
-                    if (entry.role === 'user' || entry.role === 'assistant') message(entry.role, entry.text);
+                    if (entry.role === 'user' || entry.role === 'assistant') message(entry.role, entry.text, entry.images || []);
                     else if (entry.role === 'tool') toolEvent(entry);
                 }
                 showEmpty(!messageData.entries.length); scrollEnd(true); break;
             case 'clearChat': finishAssistant(); $('messages').replaceChildren(); showEmpty(true); break;
-            case 'currentSession': state.sessionId = messageData.sessionId; $('conversation-title').textContent = messageData.title === '新对话' ? 'New Session' : messageData.title; $('conversation-title').title = messageData.title; break;
+            case 'currentSession':
+                if (state.sessionId !== messageData.sessionId) { state.images = []; state.imageDraft = ''; renderAttachments(); }
+                state.sessionId = messageData.sessionId; $('conversation-title').textContent = messageData.title === '新对话' ? 'New Session' : messageData.title; $('conversation-title').title = messageData.title; break;
             case 'historyList':
                 state.history = messageData.sessions; state.sessionId = messageData.currentSessionId || state.sessionId;
                 for (const id of state.historySelected) if (!state.history.some(item => item.sessionId === id)) state.historySelected.delete(id);
@@ -456,7 +494,12 @@
                     messageData.failures.map(item => '\n' + item.title + '：' + item.message).join('') +
                     (messageData.warnings.length ? '\n' + [...new Set(messageData.warnings)].join('\n') : '');
                 renderHistory(); break;
-            case 'historyRestored': closePopups(); $('message-input').value = ''; state.attachments = []; renderAttachments(); break;
+            case 'historyRestored': closePopups(); $('message-input').value = ''; state.attachments = []; state.images = []; renderAttachments(); break;
+            case 'imageCapability': state.imageSupported = !!messageData.supported; renderControls(); break;
+            case 'imageSendFinished':
+                if (messageData.success) state.images = state.images.filter(image => !messageData.ids.includes(image.id));
+                else { if (!$('message-input').value) $('message-input').value = state.imageDraft; status('发送失败，图片已保留，可调整模型或重试'); }
+                state.imageDraft = ''; renderAttachments(); renderControls(); break;
             case 'historyError': $('history-panel').classList.remove('hidden'); state.historyResult = messageData.message; renderHistory(); break;
             case 'editorContext': state.context = messageData; $('workspace-label').textContent = messageData.workspace || ''; renderAttachments(); renderControls(); break;
             case 'attachedFiles':

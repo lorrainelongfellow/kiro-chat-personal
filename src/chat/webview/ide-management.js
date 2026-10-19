@@ -54,6 +54,8 @@ window.installKiroManagement = function ({ api, state, node, $, closePopups, sta
                 window.kiroManagementControls(); break;
             case 'accountLoading': accountBusy = message.active; if (accountBusy) $('account-status').textContent = '正在处理账户操作…'; window.kiroManagementControls(); break;
             case 'accountDisconnected':
+                state.images = []; state.imageSupported = false;
+                document.querySelectorAll('.image-chip').forEach(chip => chip.remove());
                 state.options = []; state.credits = null; state.disconnected = true; $('connection-dot').classList.remove('connected');
                 $('model-label').textContent = '请登录或重新连接'; break;
             case 'diagnosticsLoading': diagnosticsBusy = message.active; if (diagnosticsBusy) $('diagnostics-status').textContent = '正在读取诊断信息…'; window.kiroManagementControls(); break;
