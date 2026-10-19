@@ -1,0 +1,113 @@
+{
+  "name": "kiro-chat-personal",
+  "displayName": "Kiro Chat Personal",
+  "description": "Unofficial Kiro CLI chat sidebar with native models, history and account credit usage. Requires Kiro CLI separately.",
+  "version": "1.1.3",
+  "publisher": "local-kiro-tools",
+  "license": "MIT",
+  "icon": "resources/kiro-icon.png",
+  "engines": {
+    "vscode": "^1.142.0",
+    "node": ">=22.15.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "kiro",
+    "agent",
+    "chat",
+    "copilot",
+    "code generation",
+    "spec workflow"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiroPersonal.openChat",
+        "title": "Kiro Personal: Open Chat"
+      },
+      {
+        "command": "kiroPersonal.startSpec",
+        "title": "Kiro Personal: Start Spec"
+      },
+      {
+        "command": "kiroPersonal.restartCli",
+        "title": "Kiro Personal: Restart CLI"
+      },
+      {
+        "command": "kiroPersonal.login",
+        "title": "Kiro Personal: Login"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "kiro-personal-chat",
+          "title": "Kiro",
+          "icon": "resources/kiro-icon.svg"
+        }
+      ]
+    },
+    "menus": {},
+    "views": {
+      "kiro-personal-chat": [
+        {
+          "type": "webview",
+          "id": "kiroPersonal.chatView",
+          "name": "Kiro",
+          "icon": "resources/kiro-icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kiro Chat Personal",
+      "properties": {
+        "kiroPersonal.cliPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute path to kiro-cli. Leave empty to discover the current user installation automatically."
+        }
+      }
+    }
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lorrainelongfellow/kiro-chat-personal.git"
+  },
+  "homepage": "https://github.com/lorrainelongfellow/kiro-chat-personal#readme",
+  "bugs": {
+    "url": "https://github.com/lorrainelongfellow/kiro-chat-personal/issues"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "check": "npm run check:types && npm run check:syntax",
+    "check:types": "tsc --noEmit",
+    "check:syntax": "node scripts/check-syntax.cjs",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "ignore": "7.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.x",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "4.0.0",
+    "copy-webpack-plugin": "12.0.2",
+    "ts-loader": "9.5.2",
+    "typescript": "5.8.3",
+    "webpack": "5.99.5",
+    "webpack-cli": "5.1.4"
+  }
+}

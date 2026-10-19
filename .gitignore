@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+*.vsix
+*.zip
+*.rar
+.env
+.env.*
+!.env.example
+*.log
+.vscode/
+.DS_Store

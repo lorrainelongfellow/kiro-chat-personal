@@ -1,0 +1,17 @@
+src/**
+scripts/**
+docs/**
+.github/**
+node_modules/**
+out/**
+**/*.map
+**/*.vsix
+**/*.zip
+.git/**
+.vscode/**
+.gitignore
+.gitattributes
+package-lock.json
+tsconfig.json
+webpack.config.cjs
+CONTRIBUTING.md
