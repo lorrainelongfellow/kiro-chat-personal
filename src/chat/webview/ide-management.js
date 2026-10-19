@@ -20,12 +20,13 @@ window.installKiroManagement = function ({ api, state, node, $, closePopups, sta
     };
     for (const button of document.querySelectorAll('.management-close')) button.addEventListener('click', () => closePopups());
     for (const [id, type] of [['account-refresh', 'refreshAccount'], ['account-login', 'loginAccount'], ['account-switch', 'switchAccount'], ['account-logout', 'logoutAccount'],
-        ['diagnostics-refresh', 'getDiagnostics'], ['cli-check-update', 'checkCliUpdate'], ['diagnostics-copy', 'copyDiagnostics'], ['diagnostics-reconnect', 'reconnectAccount'], ['changes-refresh', 'listTurnChanges']]) {
+        ['diagnostics-refresh', 'getDiagnostics'], ['cli-check-update', 'checkCliUpdate'], ['diagnostics-copy', 'copyDiagnostics'], ['diagnostics-reconnect', 'reconnectAccount'], ['changes-refresh', 'listTurnChanges'], ['changes-workspace', 'openWorkspaceChanges']]) {
         $(id).addEventListener('click', () => api.postMessage({ type }));
     }
     function renderChanges() {
         const list = $('changes-list'); list.replaceChildren();
-        $('changes-count').textContent = String(batch?.files.length || 0);
+        const count = batch?.totalFiles ?? batch?.files.length ?? 0;
+        $('changes-count').textContent = !batch ? '—' : !batch.finishedAt ? '…' : batch.incomplete ? count ? count + '+' : '?' : String(count);
         for (const file of batch?.files || []) {
             const row = node('div', 'change-row');
             const top = node('div', 'change-heading');
@@ -39,7 +40,7 @@ window.installKiroManagement = function ({ api, state, node, $, closePopups, sta
             }
             row.append(actions); list.append(row);
         }
-        if (!batch?.files.length) list.append(node('div', 'empty-list', !batch ? '发送任务后显示本轮文件变化' : !batch.finishedAt ? '任务执行中，结束后汇总文件变化…' : '本轮未检测到文件内容变化'));
+        if (!batch?.files.length) list.append(node('div', 'empty-list', !batch ? '发送任务后显示本轮文件变化；已有未提交修改可点“工作区改动”' : !batch.finishedAt ? '任务执行中，结束后汇总文件变化…' : batch.incomplete ? '当前汇总不完整，无法确认本轮是否有文件变化' : '本轮未检测到文件内容变化'));
         $('changes-status').textContent = (batch?.finishedAt ? '汇总于 ' + time(batch.finishedAt) + '。' : '') +
             '比较本轮开始前与结束后的内容，可能包含同期手动编辑。' + (batch?.warnings.length ? '\n' + batch.warnings.join('\n') : '');
     }

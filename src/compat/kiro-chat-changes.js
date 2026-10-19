@@ -38,17 +38,24 @@ function decode(buffer) {
     return null;
 }
 function fromBuffer(batch, buffer) {
-    if (buffer.length > limit || batch.bytes + buffer.length > textBudget) return { exists: true, unavailable: '文件较大，未保留文本快照' };
-    batch.bytes += buffer.length;
+    const fingerprint = { exists: true, hash: createHash('sha256').update(buffer).digest('hex') };
+    if (buffer.length > limit) return { ...fingerprint, unavailable: '文件较大，未保留文本快照' };
     const text = decode(buffer);
-    return { exists: true, hash: createHash('sha256').update(buffer).digest('hex'), text, unavailable: text === null ? '二进制或不支持的文本编码' : '' };
+    if (text === null) return { ...fingerprint, unavailable: '二进制或不支持的文本编码' };
+    if (batch.bytes + buffer.length > textBudget) return { ...fingerprint, unavailable: '文本快照预算已用完，仍通过内容校验统计变化' };
+    batch.bytes += buffer.length;
+    return { ...fingerprint, text, unavailable: '' };
 }
 function snapshot(batch, file) {
     try {
         const stat = fs.statSync(file);
-        if (!stat.isFile() || stat.size > limit || batch.bytes + stat.size > textBudget) return { exists: true, unavailable: '文件较大，未保留文本快照', stamp: stat.size + ':' + stat.mtimeMs };
+        if (!stat.isFile() || stat.size > limit) return { exists: true, unavailable: '文件较大，仅按文件信息判断变化，未保留文本快照', stamp: stat.size + ':' + stat.mtimeMs };
         return fromBuffer(batch, fs.readFileSync(file));
-    } catch (error) { return error.code === 'ENOENT' ? { exists: false, text: '', hash: 'absent' } : { exists: true, unavailable: '读取文件失败' }; }
+    } catch (error) {
+        if (error.code === 'ENOENT') return { exists: false, text: '', hash: 'absent' };
+        batch.incomplete = true;
+        return { exists: true, unavailable: '读取文件失败' };
+    }
 }
 function statusPaths(output, root) {
     const parts = output.split('\0'), files = [];
@@ -62,18 +69,18 @@ function statusPaths(output, root) {
 }
 async function begin(cwd, sessionId) {
     const batch = { id: randomUUID(), cwd: path.resolve(cwd), sessionId, startedAt: Date.now(), bytes: 0,
-        before: new Map(), candidates: new Set(), reported: new Set(), snippets: new Map(), files: [], warnings: [] };
+        before: new Map(), candidates: new Set(), reported: new Set(), snippets: new Map(), files: [], totalFiles: 0, incomplete: false, warnings: [] };
     try {
         batch.root = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
         batch.head = (await git(cwd, ['rev-parse', '--verify', 'HEAD'])).trim();
         batch.dirty = new Set(statusPaths(await git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all']), batch.root));
         for (const input of batch.dirty) {
             const file = eligible(batch, input); if (!file) continue;
-            if (batch.before.size >= fileLimit) { batch.warnings.push('开始前改动文件超过 200 个，部分文件不提供精确快照'); break; }
             batch.before.set(file, snapshot(batch, file)); batch.candidates.add(file);
         }
     } catch {
         batch.root = null; batch.head = null;
+        batch.incomplete = true;
         batch.warnings.push('当前工作区没有可用 Git 基线，仅收集 CLI 报告的文件改动');
     }
     return batch;
@@ -95,9 +102,9 @@ function observe(batch, tool) {
             batch.snippets.set(file, { oldText: previous?.oldText ?? content.oldText ?? '', newText: content.newText });
         }
     }
-    for (const input of paths.slice(0, fileLimit)) {
+    for (const input of paths) {
         const file = eligible(batch, input);
-        if (!file || batch.candidates.size >= fileLimit) continue;
+        if (!file) continue;
         batch.candidates.add(file); batch.reported.add(file);
         if (!batch.root && !batch.before.has(file) && tool.status !== 'completed' && !batch.snippets.has(file)) batch.before.set(file, snapshot(batch, file));
     }
@@ -112,10 +119,11 @@ async function finish(batch) {
             for (const input of [...statusPaths(status, batch.root), ...changed.split('\0').filter(Boolean).map(file => path.resolve(batch.root, file))]) {
                 const file = eligible(batch, input); if (file) batch.candidates.add(file);
             }
-        } catch { batch.warnings.push('Git 结束状态查询失败，列表可能不完整'); }
+        } catch { batch.incomplete = true; batch.warnings.push('Git 结束状态查询失败，列表可能不完整'); }
     }
-    if (batch.candidates.size > fileLimit) batch.warnings.push('本轮涉及文件超过 200 个，仅列出前 200 个');
-    for (const file of [...batch.candidates].slice(0, fileLimit)) {
+    // The row limit applies after comparison, never to baseline/candidate discovery.
+    // Prioritize actual CLI-reported paths when the changed-file list is very large.
+    for (const file of new Set([...batch.reported, ...batch.candidates])) {
         let before = batch.before.get(file);
         if (!before && batch.root && !batch.dirty.has(file)) {
             try { before = fromBuffer(batch, await git(batch.root, ['show', batch.head + ':' + path.relative(batch.root, file).replaceAll('\\', '/')], true)); }
@@ -124,6 +132,8 @@ async function finish(batch) {
         const after = snapshot(batch, file), snippet = batch.snippets.get(file);
         if (before?.hash && before.hash === after.hash) continue;
         if (before?.stamp && before.stamp === after.stamp && !batch.reported.has(file)) continue;
+        batch.totalFiles++;
+        if (batch.files.length >= fileLimit) continue;
         const full = typeof before?.text === 'string' && typeof after.text === 'string';
         batch.files.push({ id: String(batch.files.length), path: file, name: path.relative(batch.cwd, file),
             status: !before ? 'reported' : !before.exists ? 'added' : !after.exists ? 'deleted' : 'modified',
@@ -132,6 +142,7 @@ async function finish(batch) {
             diffKind: full ? 'full' : snippet ? 'snippet' : 'unavailable',
             detail: full ? '' : snippet ? 'CLI 提供的差异片段' : before?.unavailable || after.unavailable || '未获取修改前快照' });
     }
+    if (batch.totalFiles > fileLimit) batch.warnings.push('本轮共 ' + batch.totalFiles + ' 个文件变化，列表仅显示前 ' + fileLimit + ' 个（优先显示 CLI 工具涉及的文件）');
     batch.finishedAt = Date.now();
     delete batch.before; delete batch.candidates; delete batch.snippets; delete batch.dirty; delete batch.reported;
     return batch;
@@ -143,7 +154,8 @@ exports.install = function install({ CliProcess, ChatPanelProvider, vscode }) {
     function publish(panel) {
         const cli = panel._cliManager._process, batch = cli?._kiroChangeBatch || batches.get(cli?.sessionId);
         panel._postMessage({ type: 'turnChanges', batch: batch ? { id: batch.id, sessionId: batch.sessionId, startedAt: batch.startedAt,
-            finishedAt: batch.finishedAt, warnings: batch.warnings, files: batch.files.map(({ before, after, ...metadata }) => metadata) } : null });
+            finishedAt: batch.finishedAt, warnings: batch.warnings, totalFiles: batch.totalFiles, incomplete: batch.incomplete,
+            files: batch.files.map(({ before, after, ...metadata }) => metadata) } : null });
     }
     const processLine = CliProcess.prototype._processLine;
     CliProcess.prototype._processLine = function (line) {
@@ -169,7 +181,7 @@ exports.install = function install({ CliProcess, ChatPanelProvider, vscode }) {
             try {
                 batches.set(this.sessionId, await finish(batch));
                 while (batches.size > 5) batches.delete(batches.keys().next().value);
-            } catch { batch.files = []; batch.warnings.push('本轮改动汇总失败，可在 VS Code 源代码管理中查看'); batches.set(this.sessionId, batch); }
+            } catch { batch.files = []; batch.totalFiles = 0; batch.incomplete = true; batch.finishedAt = Date.now(); batch.warnings.push('本轮改动汇总失败，可在 VS Code 源代码管理中查看'); batches.set(this.sessionId, batch); }
             this._kiroOnChanges?.();
         }
     };
@@ -192,6 +204,7 @@ exports.install = function install({ CliProcess, ChatPanelProvider, vscode }) {
     ChatPanelProvider.prototype._onWebviewMessage = async function (message) {
         try {
             if (message.type === 'listTurnChanges') { publish(this); return; }
+            if (message.type === 'openWorkspaceChanges') { await vscode.commands.executeCommand('workbench.view.scm'); return; }
             if (message.type === 'openTurnFile' || message.type === 'openTurnDiff') {
                 const batch = batches.get(this._cliManager._process?.sessionId);
                 const file = batch?.id === message.batchId && batch.files.find(item => item.id === message.fileId);

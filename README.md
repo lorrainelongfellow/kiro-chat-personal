@@ -12,7 +12,7 @@ Kiro CLI 的非官方 VS Code 侧栏扩展，基于 Asad Bin Imtiaz 的 MIT 许�
 
 1. 使用 VS Code 1.142.0 或更高版本；这是此次验证的版本。
 2. 从 https://kiro.dev/downloads/ 安装 Kiro CLI。此次验证版本为 2.32.0。
-3. 在 VS Code 扩展面板的 `…` 菜单中选择“从 VSIX 安装”，从 [Releases](https://github.com/lorrainelongfellow/kiro-chat-personal/releases/latest) 下载并选择 `kiro-chat-personal-1.1.3.vsix`。
+3. 在 VS Code 扩展面板的 `…` 菜单中选择“从 VSIX 安装”，从 [Releases](https://github.com/lorrainelongfellow/kiro-chat-personal/releases/latest) 下载并选择最新的 `.vsix`。
 4. 执行 `Kiro Personal: Open Chat`。扩展使用当前 Windows 用户的 CLI 登录状态。
 5. 尚未登录时运行 `Kiro Personal: Login`，终端会显示授权地址与设备码。手动在新的 Chrome 无痕窗口中打开地址并完成 AWS Builder ID 授权。此入口使用设备授权，不自动打开普通浏览器。
 
@@ -44,7 +44,9 @@ Windows 自动查找 `%LOCALAPPDATA%\Kiro-Cli\kiro-cli.exe`、`%USERPROFILE%\.lo
 
 顶部“改动”显示最近一轮任务涉及的文件，支持打开文件和 VS Code 只读差异视图。Git 工作区比较本轮开始前与结束后的文件内容；已有未提交修改会作为开始基线，而非直接与 HEAD 比较。列表也可能包含同期手动编辑。无 Git 基线时仅收集 CLI 报告的路径或差异片段，界面会标明覆盖范围。
 
-快照仅在发送任务前后及 CLI 工具事件时收集，没有后台轮询或空闲文件扫描。每轮最多列出 200 个文件，单文件文本快照上限 1 MiB、收集预算 16 MiB；大文件、二进制或缺失基线时显示原因。内存保留最近 5 个会话各自的最后一轮，重载后清空，不提供自动接受、撤销或历史快照恢复。
+快照仅在发送任务前后及 CLI 工具事件时收集，没有后台轮询或空闲文件扫描。候选文件全部比较后统计变化总数，列表最多显示 200 个真实变化项，优先显示 CLI 工具涉及的文件；旧的未改变脏文件不占列表名额。单文件文本快照上限 1 MiB、文本保留预算 16 MiB，预算用完仍为小文件计算内容校验值，不影响计数；大文件按文件信息判断变化，二进制不保留差异文本。
+
+无本轮记录、执行中和汇总不完整分别显示“—”“…”和“?”／“数量+”，不将未知状态显示成 0。“工作区改动”打开 VS Code 源代码管理，查看当前全部未提交修改，与本轮统计范围不同。内存保留最近 5 个会话各自的最后一轮，重载后清空；旧版未采集的修改前快照无法事后补回。
 
 积分在账户栏显示，点开可查看套餐、本月已用／总额、剩余、比例和重置日期。打开面板与回复结束后自动刷新，也可手动刷新。当前 CLI 的 V3 未开放积分查询时，使用同一 CLI 的 V2 原生 `usage` 命令读取结构化结果；该查询不向模型发送提示。
 

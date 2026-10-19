@@ -1,5 +1,6 @@
 src/**
 scripts/**
+test/**
 docs/**
 .github/**
 node_modules/**

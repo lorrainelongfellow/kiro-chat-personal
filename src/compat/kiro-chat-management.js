@@ -5,7 +5,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const manifestUrl = 'https://prod.download.cli.kiro.dev/stable/latest/manifest.json';
-const patchVersion = '1.1.3';
+const patchVersion = '1.1.4';
 
 function run(file, args) {
     return new Promise((resolve, reject) => execFile(file, args, { timeout: 12000, maxBuffer: 1024 * 1024,
